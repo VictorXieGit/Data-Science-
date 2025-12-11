@@ -1,0 +1,406 @@
+---
+title: "TP2 on stochastic gradient optimization"
+subtitle: "UP3, Optimization for Machine Learning"
+author: 
+  - Rodolphe Le Riche^[CNRS LIMOS, Mines St-Etienne, UCA]
+  - Didier Rullière^[Mines Saint-Etienne, CNRS LIMOS]
+date: "Séance 2, cours du mercredi 3 décembre 2025 matin"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css style-document, echo=FALSE}
+/* La feuille de style CSS spécifie des options de style du notebook */
+/* vous pouvez ignorer cette partie purement liée à l'affichage */
+
+h2 { /* titres de niveaux deux un peu plus petits */
+    font-size: 18px;
+}
+
+pre.r { /* s'applique à tous les chunks du langage R */ 
+  background-color: WhiteSmoke ;
+}
+pre.r.solution { /* s'applique aux chunks R où class.source="solution" */
+  background-color: LightPink ;
+}
+pre.r.solution:before { /* préfixe avant chaque bloc de solution R */
+  content: "Eléments de solution en R : ";
+  display: block;
+  font-style: italic;  
+  font-weight: bold;  
+}
+
+pre.python { /* s'applique à tous les chunks du langage Python */ 
+  background-color: PaleTurquoise ;
+}
+pre.python.solution { /* s'applique aux chunks Python où class.source="solution" */
+  background-color: Plum  ;
+}
+pre.python.solution:before { /* préfixe avant chaque bloc de solution Python */
+  content: "Eléments de solution en Python : ";
+  display: block;
+  font-style: italic;  
+  font-weight: bold;  
+}
+
+```
+
+On commence par fixer une graine au générateur aléatoire, pour rendre les résultats reproductibles. Les séquences de nombres aléatoires générées seront toujours les mêmes (sauf si on change la graine bien sûr!).
+
+```{r seed}
+set.seed(123456)
+```
+
+On rappelle le principe de l'algorithme de Robbins-Monro:
+$$ \Theta_{n+1} = \Theta_n - a_n G( \Theta_n). $$
+à chaque étape, on descend dans la direction opposée du gradient, même lorsque ce dernier est entaché de bruit.
+
+# Exercice 0. Robbins-Monro minimal - code fourni
+
+Considérons la fonction $\theta \mapsto \theta^2$, dont le minimum est en $\theta=0$. La fonction n'est pas connue de l'expérimentateur, mais supposons que l'on puisse évaluer un gradient bruité de cette fonction,  $G: \theta \mapsto 2\theta + \epsilon$, où $\epsilon$ est un bruit Gaussien centré et réduit.
+
+On peut programmer Robbins-Monro avec un pas $a$ constant:
+```{r question 0a}
+G <- function(theta) {2*theta + rnorm(1, mean=0, sd=1)}
+a <- 0.5
+Theta <- vector(length=100)
+Theta[1] <- 4
+for(n in 1:99) {
+  Theta[n+1] <- Theta[n] - a * G(Theta[n])
+}
+plot(Theta, type="l", col="blue")
+abline(h=0, col="red")
+```
+
+Que constatez-vous? comment l'interprétez-vous? sauriez-vous donner un argument mathématique à votre analyse?
+
+```{r question 0a your answer}
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+```
+
+```{r question0a SOLUTION, class.source="solution"}
+# On s'attend à ce que la descente de gradient trouve le minimum theta=0
+# Or, la suite semble osciller autour de cette valeur
+# En effet, à chaque étape on ajoute un bruit de variance constante
+# Le bruit ne se réduit jamais
+# C'est une illustration du phénomène "noise ball" vu en cours
+```
+
+A présent, considérons **le même code**, en remplaçant $a$ par $a/n$, de sorte que les pas sont décroissants.
+
+```{r question 0b}
+G <- function(theta) {2*theta + rnorm(1, mean=0, sd=1)}
+a <- 0.5
+Theta <- vector(length=100)
+Theta[1] <- 4
+for(n in 1:99) {
+  Theta[n+1] <- Theta[n] - a/n * G(Theta[n])
+}
+plot(Theta, type="l", col="blue")
+abline(h=0, col="red")
+```
+
+Que constatez-vous? comment l'interprétez-vous? sauriez-vous donner un argument mathématique à votre analyse?
+
+```{r question 0b your answer}
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+```
+
+```{r question0b SOLUTION, class.source="solution"}
+# On s'attend à ce que la descente de gradient trouve le minimum theta=0
+# Or, la suite semble bien converger vers cette valeur
+# A chaque étape, on ajoute un bruit dont la variance decroit
+# La preuve formelle de la convergence est donnée dans le cours
+
+# On peut imaginer faire de très nombreux essais dans une situation réelle.
+# Si les calculs sont coûteux, on peut perdre beaucoup de temps!
+# En conclusion, on gagne beaucoup de temps avec un peu de théorie...
+```
+
+Vous pouvez faire quelques essais ici, modifier la décroissance, la valeur des pas, etc. L'exercice suivant revient sur ces aspects en détail.
+```{r exercice 0c}
+# Votre code ici.
+```
+
+# Exercice 1. Robbins-Monro sur fonction simple
+
+Nous allons illustrer la descente de gradient stochastique au moyen d'une fonction très simple. L'intérêt sera de pouvoir comprendre le fonctionnement des algorithmes et de pouvoir comparer empiriquement les vitesses de convergence. L'illustration se veut minimale, mais couvre néanmoins les principaux écueils possible de la convergence: *noise ball* et *biais*.
+
+On supposera ici que la fonction à minimiser est
+$$ f(\theta) =\frac{2\theta^2-4\theta+2}{\theta^2+1}\, .$$
+Bien sûr, on suppose qu'on ignore la vraie expression de $f$, et que l'experimentateur n'a accès qu'à des observations bruitées de la dérivée de $f$:
+$$ G(\theta) = 4\frac{\theta^2-1}{(\theta^2+1)^2} + \epsilon(\theta) \, .$$
+où les $\epsilon(\theta)$ sont variables aléatoires gaussiennes centrées et réduite, mutuellement indépendantes.
+
+### Remarque:
+
+Cette situation où l'on observe seulement un gradient bruité est très commune en Machine Learning, notamment lors de l'optimisation de réseaux de neurones:
+
+* D'une part, le gradient est connu car la fonction appliquée est connue (une composition de fonctions d'activation).
+* D'autre part, le gradient est entaché de bruit, car évalué sur un échantillon alétoire de données.
+
+Vous pouvez visualiser la fonction à l'aide de graphiques R, mais aussi à l'aide d'outils en ligne, comme <https://www.desmos.com/calculator/9wjwoq6gxi> .
+
+## Question 1a. Gradient bruité et Robbins-Monro
+
+Programmer la fonction $G$ et l'algorithme de Robbins-Monro:
+$$ \Theta_{n+1} = \Theta_n - a_n G( \Theta_n). $$
+On prendra des pas de la forme $$a_n=\frac{a}{n^\alpha}$$
+où $a$, $\alpha$ sont des paramètres de la fonction. 
+
+```{r question1a}
+# votre code ici
+```
+
+```{r question1a SOLUTION, class.source="solution"}
+
+#G <- function(theta) { -sin(theta) + 2*theta/10 + rnorm(1, mean=0, sd=1) }
+
+G <- function(theta) { 4*(theta^2-1)/((1+theta^2)^2) + rnorm(1, mean=0, sd=1) }
+
+RobbinsMonro <- function(thetainit, a, alpha, nmax=50) {
+  Theta <- vector(length = nmax)
+  Theta[1] <- thetainit
+  for(n in 1:(nmax-1)) {
+    Theta[n+1] = Theta[n] - a/(n^alpha) * G(Theta[n])
+  }
+  return(Theta)
+}
+```
+
+## Question 1b. Pas décroissant doucement et *convergence*
+
+Tracer l'évolution de la suite $(\Theta_n)_{n=1,2, ..., n_{max}}$ pour $\alpha=1$ et pour différentes valeurs de $a$. On prendra par exemple une suite initialisée en $\Theta_1 = 2$, on pourra utiliser, par exemple $n_{max}=20$. Dans un premier temps, on peut essayer avec une décroissance des pas donnée par $\alpha=1$.
+
+Des amplitudes de pas $a$ vous semblent-elles meilleures que d'autres?
+
+```{r question1b}
+# votre code ici
+```
+
+```{r question1b SOLUTION, class.source="solution"}
+
+#constantes pour tracés et essais
+mu <- 1             # valeur cible
+thetainit <- 2      # valeur de départ de la suite
+range_y <- c(-2,4)  # zone de tracé des ordonnées
+
+Theta1 <- RobbinsMonro(thetainit, 0.1,  alpha=1)
+Theta2 <- RobbinsMonro(thetainit, 0.25, alpha=1)
+Theta3 <- RobbinsMonro(thetainit, 0.5,  alpha=1)
+Theta4 <- RobbinsMonro(thetainit, 1,    alpha=1)
+Theta5 <- RobbinsMonro(thetainit, 2, 1)
+
+plot(Theta1, type='l', col='blue', ylim=range_y)
+lines(Theta2, col='purple')
+lines(Theta3, col='red')
+lines(Theta4, col='brown')
+lines(Theta5, col='black')
+abline(h = mu, col="gray")
+
+# les séries semblent se rapprocher peu à peu de la cible
+# pour a=0.5 (en rouge), avec seed=123456, la convergence semble plus rapide
+# cela peut s'expliquer en théorie (cf. cours)
+# mais d'autres seeds conduisent à des résultats visuels différents
+# il faut bien imaginer dans une situation pratique l'impact du choix de a...
+
+```
+
+## Question 1c. Décroissance trop lente. Pas constants et *noise ball*
+Montrer que lorsque $\alpha=0$, c'est-à-dire lorsque les pas $a_n=a$ sont constants, la suite oscille dans une ``noise ball'' (cf. cours), pourquoi?
+
+```{r question1c}
+# votre code ici
+```
+
+```{r question1c SOLUTION, class.source="solution"}
+Theta1 <- RobbinsMonro(thetainit, 0.1,  alpha=0)
+Theta2 <- RobbinsMonro(thetainit, 0.25, alpha=0)
+Theta3 <- RobbinsMonro(thetainit, 0.5,  alpha=0)
+Theta4 <- RobbinsMonro(thetainit, 1,    alpha=0)
+Theta5 <- RobbinsMonro(thetainit, 2,    alpha=0)
+
+plot(Theta1, type='l', col='blue', ylim=range_y)
+lines(Theta2, col='purple')
+lines(Theta3, col='red')
+lines(Theta4, col='brown')
+lines(Theta5, col='black')
+abline(h = mu, col="gray")
+
+# on observe bien une oscillation autour de la bonne valeur. En effet, avec des pas constants, le bruit n'est jamais réduit, il demeure à chaque itération.
+```
+
+## Question 1d. Pas décroissant trop vite et *biais*
+
+Montrer qu'à l'inverse, si la décroissance des pas est trop rapide, par exemple donnée par $\alpha=2$, alors la suite semble souvent biaisée. Pourquoi?
+```{r question1d}
+# votre code ici
+```
+
+```{r question1d SOLUTION, class.source="solution"}
+Theta1 <- RobbinsMonro(thetainit, 0.1,  alpha=2)
+Theta2 <- RobbinsMonro(thetainit, 0.25, alpha=2)
+Theta3 <- RobbinsMonro(thetainit, 0.5,  alpha=2)
+Theta4 <- RobbinsMonro(thetainit, 1,    alpha=2)
+Theta5 <- RobbinsMonro(thetainit, 2,    alpha=2)
+
+plot(Theta1, type='l', col='blue', ylim=range_y)
+lines(Theta2, col='purple')
+lines(Theta3, col='red')
+lines(Theta4, col='brown')
+lines(Theta5, col='black')
+abline(h = mu, col="gray")
+
+# si les pas décroissent trop vite, la suite s'essoufle loin du minimiseur. Cf. cours.
+```
+
+## Question 1e. quelques extensions libres
+
+* Vous pouvez vous amuser avec différentes valeurs de $a$ et de $\alpha$.
+* Vous pouvez faire du l'averaging d'abscisse (postprocessing), constater que cela permet de diminuer $\alpha$
+* Essayer de tracer les erreurs biais, variance et erreur totale en fonction du pas
+
+N'hésitez pas à traiter en priorité l'exercice suivant, avant de revenir aux extensions libres.
+
+```{r question1e}
+# votre code ici
+```
+
+```{r SevRM, class.source="solution"}
+# Remind arguments: RobbinsMonro <- function(thetainit, a, alpha=1, nmax=50) 
+# Try over nsimu iterations, and collect the last proposal at each iteration
+# we plot here only bias for instance
+
+SeveralRobbinsMonro <- function(thetainit, a, alpha=1, nmax=50, nsimu=100) {
+    Result <- vector(length=nsimu)
+    for(i in seq(from=1, to=nsimu)) {
+      Theta <- RobbinsMonro(thetainit, a, alpha, nmax)
+      Result[i] <- Theta[length(Theta)] #last value of the vector
+  }
+  return(Result)
+}
+
+RobbinsMonroForVaryingStepSize <- function(thetainit, Steps, alpha=1, nmax=50, nsimu=1000) {
+  nbSteps <- length(Steps)
+  trueTarget <- mu
+  Bias <- vector(length=nbSteps)
+  Variance <- vector(length=nbSteps)
+  Error <- vector(length=nbSteps)
+  for(i in seq(from=1, to=nbSteps)) {
+    Resu <- SeveralRobbinsMonro(thetainit, Steps[i], alpha, nmax, nsimu) 
+    Bias[i] <- (mean(Resu)-trueTarget)^2
+    Variance[i] <- var(Resu)
+    Error[i] <- mean((Resu-trueTarget)^2)
+  }
+  return(list(Bias=Bias, Variance=Variance, Error=Error))
+}
+
+Steps <- seq(from=0.01, to=4, length.out=100)
+Resu <- RobbinsMonroForVaryingStepSize(thetainit=2, Steps=Steps, alpha=1, nmax=50, nsimu=1000)
+MSE <-Resu$Bias+Resu$Variance 
+plot(Steps, Resu$Bias, type='l', col='blue',log = 'y', ylim=c(1e-7, 10))
+lines(Steps, Resu$Variance, type='l', col='lightblue')
+lines(Steps, Resu$Error, type="l", col="purple")
+lines(Steps, MSE, type='l', col='red', lty=2)
+
+# a zoom
+plot(Steps, MSE, type='l', col='red', xlim=c(0,2), ylim=c(0,5))
+
+# A compléter avec compromis biais variance, notamment si alpha varie
+# donne une idée d'un pas adapté pour nmax pas (différent pas optimal asymptotique)
+# difficile de conclure dans la zone très erratiques, requiert plus d'essais
+
+```
+
+## Exercice 2. Estimation du gradient
+
+On imagine désormais qu'un code de calcul renvoit, en fonction d'un paramètre $\theta$, une valeur réelle (par exemple lorsqu'il simule un phénomène). Pour fixer les idées, disons qu'il s'agit d'un frottement $f(\theta)$ à minimiser, en fonction d'un paramètre de forme $\theta$. Le code de calcul s'exécute très lentement, donc on souhaite faire le moins d'évaluation possible pour optimiser le paramètre $\theta$.
+
+Pour les besoins du TP, nous prendrons la fonction 
+$$f(\theta) := \frac{2\theta^2-4\theta+2}{\theta^2+1}$$
+
+## Question 2a. Descente en l'absence de bruit
+
+En l'absence de bruit, opérer une descente de gradient avec un budget de 50 évaluations de la fonction, en estimant le gradient par différence finie (ce qui requiert 2 évaluations par itération). Quel nouveau paramètre faut-il définir?
+
+
+```{r question 2a}
+# vos réponses ici
+```
+
+```{r question 2a - SOLUTION, class.source="solution"}
+# pour l"évaluation de la différence finie, il faut se doter d'un second pas
+# nous le noterons c
+# en l'absence de bruit, on peut le prendre très petit
+# car la fonction est évaluée de façon exacte, aux minuscules erreurs numériques près
+
+f <- function(theta) { 
+  (2*theta^2-4*theta+2)/(theta^2+1) 
+}
+
+nmax <- 25
+a <- 0.5
+c <- 0.05
+Theta <- vector(length = nmax)
+Theta[1] <- 2
+  for(n in seq(1, nmax-1)) {
+    Theta[n+1] = Theta[n] - a * (f(Theta[n]+c)-f(Theta[n]-c))/(2*c)
+  }
+
+plot(Theta, type='l', col='blue', ylim=c(-1,3))
+abline(h=1, col="red")
+```
+
+## Question 2b. Gradient estimé et descente en présence de bruit
+
+Nous allons voir que la descente est beaucoup plus délicate en présence de bruit...
+
+Supposons que le code de calcul n'est pas parfait, de sorte que chaque évaluation de $f(\theta)$ est entachée d'un bruit $\epsilon$, bruit Gaussien centré (chaque évaluation de la fonction conduit à un nouveau tirage de $\epsilon$), d'écart-type $0.1$.
+Par exemple, le code de calcul peut utiliser un maillage imprécis, des approximations numériques, ou dépendre de simulations physiques incertaines (essais en soufflerie par exemple).
+
+Adapter vos calculs pour faire la descente en présence du bruit epsilon.
+
+Quelles question se posent? La convergence vous semble-t-elle possible à obtenir? est-elle beaucoup plus lente en présence de bruit?
+
+
+```{r question 2b}
+# vos réponses ici
+```
+
+```{r 2b SOLUTION, class.source="solution"}
+set.seed(123456)
+
+F <- function(theta) { 
+  (2*theta^2-4*theta+2)/(theta^2+1)  + rnorm(n=1, mean=0, sd=0.1)
+}
+
+nmax <- 25
+a <- 0.5
+c <- 0.05
+Theta <- vector(length = nmax)
+Theta[1] <- 2
+  for(n in seq(1, nmax-1)) {
+    cn = c/n^(1/4)
+    Theta[n+1] = Theta[n] - a/n * (F(Theta[n]+cn)-F(Theta[n]-cn))/(2*cn)
+  }
+
+plot(Theta, type='l', col='purple', ylim=c(-1,3))
+abline(h=1, col="red")
+
+# Les principales questions qui se posent sont
+# le choix du pas a et de sa décroissance
+# le choix du pas c et de sa décroissance
+
+# on constate aisément que pour des pas constants, ou décroissant trop doucement,
+# ça ne marche ... pas du tout!
+```
+

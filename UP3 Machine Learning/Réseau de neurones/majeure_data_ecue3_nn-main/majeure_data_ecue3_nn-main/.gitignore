@@ -1,0 +1,5 @@
+examples_python/data/MNIST/**
+examples_python/pytorch/data/**
+*.pyc
+*/__pycache__/*
+.vscode

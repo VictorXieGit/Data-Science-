@@ -1,0 +1,206 @@
+library(dplyr)
+library(lubridate)
+library(forecast)
+library(moments)
+#Ouverture fichier et accès aux datas
+setwd("C:\\Users\\victo\\OneDrive\\Bureau\\COURS général\\cours mine 2526\\sdd\\UP1 fondement proba\\Séries temporelles 2025-2026(15h)-20250917")
+data <- read.table('data.csv', header = TRUE, sep = ',')
+
+#Conversion en degré Celsius et les dates
+data$degre_celcius <- (data[,2]-32)*5/9
+
+# 2 lignes seulement !
+data$date_convertie <- as.Date(data[,1], format = "%m/%d/%Y")
+
+tableau_mensuel <- data %>%
+  group_by(annee = year(date_convertie), 
+           mois = month(date_convertie)) %>%
+  summarise(temperature_moyenne = mean(degre_celcius, na.rm = TRUE))
+
+print(tableau_mensuel)
+serie_temporelle_mensuelle <-ts(tableau_mensuel[,3],start=c(min(tableau_mensuel$annee), min(tableau_mensuel$mois)), frequency = 12)
+
+plot(serie_temporelle_mensuelle,
+     main = "Série Temporelle des Températures Mensuelles",
+     ylab = "Température (°C)",
+     xlab = "Temps",
+     col = "red",
+     lwd = 2)
+grid(
+  col = "black",
+  lty = "dotted",
+  lwd = 0.5
+)
+
+#Etude statistique de la série mensuelle des températures
+# Statistiques summary
+print(summary_stats(serie_temporelle_mensuelle))
+
+
+# Moyenne et médiane
+moyenne <- mean(serie_temporelle_mensuelle, na.rm = TRUE)
+mediane <- median(serie_temporelle_mensuelle, na.rm = TRUE)
+
+print(paste("Moyenne :", round(moyenne, 2)))
+print(paste("Médiane :", round(mediane, 2)))
+
+# Variance et écart-type
+variance <- var(serie_temporelle_mensuelle, na.rm = TRUE)
+ecart_type <- sd(serie_temporelle_mensuelle, na.rm = TRUE)
+
+
+print(paste("Variance :", round(variance, 2)))
+print(paste("Écart-type :", round(ecart_type, 2)))
+
+# Skewness (asymétrie)
+skew <- skewness(serie_temporelle_mensuelle, na.rm = TRUE)
+
+# Kurtosis (aplatissement)
+kurt <- kurtosis(serie_temporelle_mensuelle, na.rm = TRUE)
+
+print(paste("Skewness :", round(skew, 3)))
+print(paste("Kurtosis :", round(kurt, 3)))
+
+# Interprétation
+if (skew > 0) {
+  print("Distribution asymétrique positive (étalée à droite)")
+} else if (skew < 0) {
+  print("Distribution asymétrique négative (étalée à gauche)")
+} else {
+  print("Distribution symétrique")
+}
+
+if (kurt > 3) {
+  print("Distribution leptokurtique (plus pointue que la normale)")
+} else if (kurt < 3) {
+  print("Distribution platykurtique (plus plate que la normale)")
+} else {
+  print("Distribution mésokurtique (comme la normale)")
+}
+
+#Pas de tendance visuellement, saisonnalité annuelles, peux de volatilité écart de température proches
+
+#la saisonnalité étant annuelles nous allons réaliser une première differentiation
+# Décomposition additive de la série
+decomposition <- decompose(serie_temporelle_mensuelle, type = "additive")
+
+# Création de la série désaisonnalisée nommée "des_data"
+des_data <- serie_temporelle_mensuelle - decomposition$seasonal
+
+# Supprimer les valeurs NA aux extrémités
+des_data <- na.omit(des_data)
+# Visualiser la décomposition
+plot(decomposition)
+
+
+# Graphique comparatif
+par(mfrow = c(2, 1))
+
+# Série originale
+plot(serie_temporelle_mensuelle, 
+     ylab = "Température (°C)", 
+     col = "blue", 
+     lwd = 2)
+title("Série Originale (avec saisonnalité annuelle)")
+
+# Série désaisonnalisée
+plot(des_data, 
+     ylab = "Température (°C)", 
+     col = "red", 
+     lwd = 2)
+title("Série Désaisonnalisée (des_data)")
+
+par(mfrow = c(1, 1))
+#question 4 test stationnaire
+# Test 1 ADF - Hypothèses:
+# H0: Série non stationnaire (présence de racine unitaire)
+# H1: Série stationnaire
+
+library(tseries)
+
+test_adf <- adf.test(na.omit(des_data))
+print("=== TEST ADF (Augmented Dickey-Fuller) ===")
+print(test_adf)
+
+# Interprétation
+if (test_adf$p.value < 0.05) {
+  print("p-value < 0.05 : On rejette H0 - La série est STATIONNAIRE")
+} else {
+  print("p-value >= 0.05 : On ne rejette pas H0 - La série est NON STATIONNAIRE")
+}
+
+# Test KPSS - Hypothèses inverses:
+# H0: Série stationnaire
+# H1: Série non stationnaire
+
+test_kpss <- kpss.test(na.omit(des_data))
+print("=== TEST KPSS ===")
+print(test_kpss)
+
+# Interprétation
+if (test_kpss$p.value < 0.05) {
+  print("p-value < 0.05 : On rejette H0 - La série est NON STATIONNAIRE")
+} else {
+  print("p-value >= 0.05 : On ne rejette pas H0 - La série est STATIONNAIRE")
+}
+
+#Nous avons un test kpss non concluant et un test ADF concluant, on va alors redifférencié la série jusqu'a être bon.
+
+# 1ère différenciation
+serie_diff1 <- diff(des_data)
+kpss_diff1 <- kpss.test(na.omit(serie_diff1))
+cat("Après 1ère diff - KPSS p-value:", kpss_diff1$p.value, "\n")
+
+if (kpss_diff1$p.value >= 0.05) {
+  cat("Série rendue stationnaire avec 1 différenciation\n")
+  return(serie_diff1)
+}
+
+#la p-value étant mainteant de 0.01>0.05 on en conclue que la série est bien stationnaire
+par(mfrow=c(2,1))
+acf(serie_diff1, main= "série diff")
+pacf(serie_diff1, main = "série diff")
+
+#comparaison des AR et AM déterminons le type
+# Créer tous les modèles AR et MA jusqu'à l'ordre 3
+# Tester tous les modèles ARMA(p,q) avec p=0-3, q=0-3
+modeles_complets <- list()
+index <- 1
+
+for (p in 0:3) {
+  for (q in 0:3) {
+    if (p == 0 & q == 0) next  # sauter ARIMA(0,0,0)
+    
+    tryCatch({
+      modeles_complets[[index]] <- arima(des_data, order = c(p, 0, q))
+      names(modeles_complets)[index] <- paste0("ARMA(", p, ",", q, ")")
+      index <- index + 1
+    }, error = function(e) {
+      # Ignorer les modèles qui ne convergent pas
+    })
+  }
+}
+# Créer le tableau avec tous les modèles
+resultats_complets <- data.frame(
+  Modèle = character(),
+  AIC = numeric(),
+  BIC = numeric(),
+  LogLik = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (nom in names(modeles_complets)) {
+  modele <- modeles_complets[[nom]]
+  resultats_complets <- rbind(resultats_complets, data.frame(
+    Modèle = nom,
+    AIC = round(AIC(modele), 2),
+    BIC = round(BIC(modele), 2),
+    LogLik = round(logLik(modele), 2)
+  ))
+}
+
+# Trier par AIC
+resultats_complets <- resultats_complets[order(resultats_complets$BIC), ]
+
+print("Comparaison COMPLÈTE des modèles (AR, MA, ARMA):")
+print(resultats_complets)

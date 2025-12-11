@@ -1,0 +1,212 @@
+---
+title: "TP2 on stochastic gradient optimization"
+subtitle: "UP3, Optimization for Machine Learning"
+author: 
+  - Rodolphe Le Riche^[CNRS LIMOS, Mines St-Etienne, UCA]
+  - Didier Rullière^[Mines Saint-Etienne, CNRS LIMOS]
+date: "Séance 2, cours du mercredi 3 décembre 2025 matin"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css style-document, echo=FALSE}
+/* La feuille de style CSS spécifie des options de style du notebook */
+/* vous pouvez ignorer cette partie purement liée à l'affichage */
+
+h2 { /* titres de niveaux deux un peu plus petits */
+    font-size: 18px;
+}
+
+pre.r { /* s'applique à tous les chunks du langage R */ 
+  background-color: WhiteSmoke ;
+}
+pre.r.solution { /* s'applique aux chunks R où class.source="solution" */
+  background-color: LightPink ;
+}
+pre.r.solution:before { /* préfixe avant chaque bloc de solution R */
+  content: "Eléments de solution en R : ";
+  display: block;
+  font-style: italic;  
+  font-weight: bold;  
+}
+
+pre.python { /* s'applique à tous les chunks du langage Python */ 
+  background-color: PaleTurquoise ;
+}
+pre.python.solution { /* s'applique aux chunks Python où class.source="solution" */
+  background-color: Plum  ;
+}
+pre.python.solution:before { /* préfixe avant chaque bloc de solution Python */
+  content: "Eléments de solution en Python : ";
+  display: block;
+  font-style: italic;  
+  font-weight: bold;  
+}
+
+```
+
+On commence par fixer une graine au générateur aléatoire, pour rendre les résultats reproductibles. Les séquences de nombres aléatoires générées seront toujours les mêmes (sauf si on change la graine bien sûr!).
+
+```{r seed}
+set.seed(123456)
+```
+
+On rappelle le principe de l'algorithme de Robbins-Monro:
+$$ \Theta_{n+1} = \Theta_n - a_n G( \Theta_n). $$
+à chaque étape, on descend dans la direction opposée du gradient, même lorsque ce dernier est entaché de bruit.
+
+# Exercice 0. Robbins-Monro minimal - code fourni
+
+Considérons la fonction $\theta \mapsto \theta^2$, dont le minimum est en $\theta=0$. La fonction n'est pas connue de l'expérimentateur, mais supposons que l'on puisse évaluer un gradient bruité de cette fonction,  $G: \theta \mapsto 2\theta + \epsilon$, où $\epsilon$ est un bruit Gaussien centré et réduit.
+
+On peut programmer Robbins-Monro avec un pas $a$ constant:
+```{r question 0a}
+G <- function(theta) {2*theta + rnorm(1, mean=0, sd=1)}
+a <- 0.5
+Theta <- vector(length=100)
+Theta[1] <- 4
+for(n in 1:99) {
+  Theta[n+1] <- Theta[n] - a * G(Theta[n])
+}
+plot(Theta, type="l", col="blue")
+abline(h=0, col="red")
+```
+
+Que constatez-vous? comment l'interprétez-vous? sauriez-vous donner un argument mathématique à votre analyse?
+
+```{r question 0a your answer}
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+```
+
+A présent, considérons **le même code**, en remplaçant $a$ par $a/n$, de sorte que les pas sont décroissants.
+
+```{r question 0b}
+G <- function(theta) {2*theta + rnorm(1, mean=0, sd=1)}
+a <- 0.5
+Theta <- vector(length=100)
+Theta[1] <- 4
+for(n in 1:99) {
+  Theta[n+1] <- Theta[n] - a/n * G(Theta[n])
+}
+plot(Theta, type="l", col="blue")
+abline(h=0, col="red")
+```
+
+Que constatez-vous? comment l'interprétez-vous? sauriez-vous donner un argument mathématique à votre analyse?
+
+```{r question 0b your answer}
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+# votre réponse en commentaire ici
+```
+
+Vous pouvez faire quelques essais ici, modifier la décroissance, la valeur des pas, etc. L'exercice suivant revient sur ces aspects en détail.
+```{r exercice 0c}
+# Votre code ici.
+```
+
+# Exercice 1. Robbins-Monro sur fonction simple
+
+Nous allons illustrer la descente de gradient stochastique au moyen d'une fonction très simple. L'intérêt sera de pouvoir comprendre le fonctionnement des algorithmes et de pouvoir comparer empiriquement les vitesses de convergence. L'illustration se veut minimale, mais couvre néanmoins les principaux écueils possible de la convergence: *noise ball* et *biais*.
+
+On supposera ici que la fonction à minimiser est
+$$ f(\theta) =\frac{2\theta^2-4\theta+2}{\theta^2+1}\, .$$
+Bien sûr, on suppose qu'on ignore la vraie expression de $f$, et que l'experimentateur n'a accès qu'à des observations bruitées de la dérivée de $f$:
+$$ G(\theta) = 4\frac{\theta^2-1}{(\theta^2+1)^2} + \epsilon(\theta) \, .$$
+où les $\epsilon(\theta)$ sont variables aléatoires gaussiennes centrées et réduite, mutuellement indépendantes.
+
+### Remarque:
+
+Cette situation où l'on observe seulement un gradient bruité est très commune en Machine Learning, notamment lors de l'optimisation de réseaux de neurones:
+
+* D'une part, le gradient est connu car la fonction appliquée est connue (une composition de fonctions d'activation).
+* D'autre part, le gradient est entaché de bruit, car évalué sur un échantillon alétoire de données.
+
+Vous pouvez visualiser la fonction à l'aide de graphiques R, mais aussi à l'aide d'outils en ligne, comme <https://www.desmos.com/calculator/9wjwoq6gxi> .
+
+## Question 1a. Gradient bruité et Robbins-Monro
+
+Programmer la fonction $G$ et l'algorithme de Robbins-Monro:
+$$ \Theta_{n+1} = \Theta_n - a_n G( \Theta_n). $$
+On prendra des pas de la forme $$a_n=\frac{a}{n^\alpha}$$
+où $a$, $\alpha$ sont des paramètres de la fonction. 
+
+```{r question1a}
+# votre code ici
+```
+
+## Question 1b. Pas décroissant doucement et *convergence*
+
+Tracer l'évolution de la suite $(\Theta_n)_{n=1,2, ..., n_{max}}$ pour $\alpha=1$ et pour différentes valeurs de $a$. On prendra par exemple une suite initialisée en $\Theta_1 = 2$, on pourra utiliser, par exemple $n_{max}=20$. Dans un premier temps, on peut essayer avec une décroissance des pas donnée par $\alpha=1$.
+
+Des amplitudes de pas $a$ vous semblent-elles meilleures que d'autres?
+
+```{r question1b}
+# votre code ici
+```
+
+## Question 1c. Décroissance trop lente. Pas constants et *noise ball*
+Montrer que lorsque $\alpha=0$, c'est-à-dire lorsque les pas $a_n=a$ sont constants, la suite oscille dans une ``noise ball'' (cf. cours), pourquoi?
+
+```{r question1c}
+# votre code ici
+```
+
+## Question 1d. Pas décroissant trop vite et *biais*
+
+Montrer qu'à l'inverse, si la décroissance des pas est trop rapide, par exemple donnée par $\alpha=2$, alors la suite semble souvent biaisée. Pourquoi?
+```{r question1d}
+# votre code ici
+```
+
+## Question 1e. quelques extensions libres
+
+* Vous pouvez vous amuser avec différentes valeurs de $a$ et de $\alpha$.
+* Vous pouvez faire du l'averaging d'abscisse (postprocessing), constater que cela permet de diminuer $\alpha$
+* Essayer de tracer les erreurs biais, variance et erreur totale en fonction du pas
+
+N'hésitez pas à traiter en priorité l'exercice suivant, avant de revenir aux extensions libres.
+
+```{r question1e}
+# votre code ici
+```
+
+## Exercice 2. Estimation du gradient
+
+On imagine désormais qu'un code de calcul renvoit, en fonction d'un paramètre $\theta$, une valeur réelle (par exemple lorsqu'il simule un phénomène). Pour fixer les idées, disons qu'il s'agit d'un frottement $f(\theta)$ à minimiser, en fonction d'un paramètre de forme $\theta$. Le code de calcul s'exécute très lentement, donc on souhaite faire le moins d'évaluation possible pour optimiser le paramètre $\theta$.
+
+Pour les besoins du TP, nous prendrons la fonction 
+$$f(\theta) := \frac{2\theta^2-4\theta+2}{\theta^2+1}$$
+
+## Question 2a. Descente en l'absence de bruit
+
+En l'absence de bruit, opérer une descente de gradient avec un budget de 50 évaluations de la fonction, en estimant le gradient par différence finie (ce qui requiert 2 évaluations par itération). Quel nouveau paramètre faut-il définir?
+
+
+```{r question 2a}
+# vos réponses ici
+```
+
+## Question 2b. Gradient estimé et descente en présence de bruit
+
+Nous allons voir que la descente est beaucoup plus délicate en présence de bruit...
+
+Supposons que le code de calcul n'est pas parfait, de sorte que chaque évaluation de $f(\theta)$ est entachée d'un bruit $\epsilon$, bruit Gaussien centré (chaque évaluation de la fonction conduit à un nouveau tirage de $\epsilon$), d'écart-type $0.1$.
+Par exemple, le code de calcul peut utiliser un maillage imprécis, des approximations numériques, ou dépendre de simulations physiques incertaines (essais en soufflerie par exemple).
+
+Adapter vos calculs pour faire la descente en présence du bruit epsilon.
+
+Quelles question se posent? La convergence vous semble-t-elle possible à obtenir? est-elle beaucoup plus lente en présence de bruit?
+
+
+```{r question 2b}
+# vos réponses ici
+```
+

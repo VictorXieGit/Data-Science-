@@ -1,0 +1,6 @@
+setwd("C:\\Users\\victo\\OneDrive\\Bureau\\COURS général\\cours mine 2526\\sdd\\Régression Linéaire (mardi 2309 et 3009)-20250930\\TP")
+data <- read.table("Data_app.txt", header = TRUE)
+plot(x=data[,1],y=data[,3],col='blue')
+reg <- lm(data[,3] ~ data[,1], data=data)
+summary(reg)
+abline(reg, col='red')

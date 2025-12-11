@@ -1,0 +1,262 @@
+---
+title: "TP1 Krigeage"
+date: "mercredi 10 décembre 2025"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css, echo=FALSE}
+.answer {
+background-color: lightblue;
+}
+```
+
+Note: il est recommandé de travailler avec RStudio. A l'ouverture de ce document R markdown (.Rmd), si les accents apparaissent mal, dans RStudio sélectionner File, Reopen with encoding puis utf8. Une fois le document réalisé, vous pouvez utiliser le bouton knit pour générer une sortie au format html.
+
+
+# Exercice 1. Un exemple minimal de Krigeage Simple
+
+Nous allons ici considérer un exemple très minimal, que nous allons conduire pas à pas, sans utiliser de packages dédiés, pour bien comprendre la méthode.
+
+On considère ici une fonction de réponse, disons 
+$$f(x) = a + sin(x) $$
+On prendra dans un premier temps $a=0.75$.
+
+Cette fonction $f$ est supposée inconnue, mais on observe $n=5$ valeurs de cette fonction aux abscisses contenues dans le vecteur $X=(-2, -1, 4, 5, 7)$.
+
+
+## Question 1a. Noyau de covariance
+
+Nous allons chercer à interpoler les valeurs observées de la fonction au moyen de krigeage simple.
+
+Pour cela, nous allons modéliser les réponses par un processus Gaussien $Y(.)$, supposé centré. On suppose dans un premier temps que la covariance entre les valeurs du processus est donnée par la fonction suivante:
+
+$$Cov(Y(x),Y(x')) = k(x,x') = \sigma^2 \exp\left(-\frac{(x-x')^2}{2\theta^2}\right) $$
+
+* Cette fonction ne dépend que de $x-x'$, quelle est la conséquence sur la nature du processus $Y$?
+
+* Quel est le nom de cette fonction de covariance (noyau de covariance)?
+
+* Rapidement, à quelle page cette fonction de covariance est-elle décrite dans le livre <http://www.gaussianprocess.org/gpml/chapters/RW.pdf>? Vous pourrez lire le détail plus tard, vous disposez désormais d'une référence très complète!
+
+```{r}
+#insérer vos réponses sous forme de commentaires
+```
+
+## Question 1b. Observations
+
+Créer les inputs $X$ et le vecteur de réponses $Y=f(X)$ en ces abscisses.
+
+```{r}
+# votre code ici
+```
+
+
+## Question 1c. Matrices de covariance
+Nous allons chercher à prédire la fonction en des abscisses réparties régulièrement sur l'intervalle $[-10 , 10]$, par exemple en $q=100$ abscisses. Ces abscisses sont regroupées dans un vecteur colonne $x^{new}$.
+
+Créer les abcisses $x_{new}$. En supposant $\theta=1$ et $\sigma^2=1$, créer deux matrices :
+
+* la matrice $n \times n$ de covariances $K=(K_{ij})$ avec $K_{ij}=k(x_i,  x_j)$, où $x_i$ et $x_j$ sont des inputs observés. On note parfois cette matrice $K=k(X,X)$.
+
+* la matrice $n \times q$ de covariances $h=(h_{ij})$ avec $h_{ij}=k(x_i,  x^{new}_j)$. On note parfois cette matrice $h=k(X,x^{new})$.
+
+Ne cherchez pas à faire un code optimal, mais simplement un code lisible. 
+
+```{r}
+# votre code ici
+```
+
+
+Montrer pour un vecteur $\mathbf{z}$ de votre choix que $z^{\top} K z \ge 0$. Ce sera le cas pour tout $z$ si et seulement si les valeurs propres de $K$ sont $\ge 0$, montrer que ce sera bien le cas ici.
+
+```{r}
+# votre code ici
+```
+
+
+
+## Question 1d. Prédictions
+
+La moyenne de Krigeage Simple aux abscisses $x^{new}$ est donné par la formule:
+$$ m(x^{new}) = h^{\top} K^{-1} \cdot Y$$
+tracer cette moyenne de Krigeage. Ajouter le nuage de points observés $(X,Y)$.
+
+```{r}
+# votre code ici
+```
+
+
+Au sujet du calcul de la moyenne de Krigeage:
+
+* Une fois les matrices K et h remplies, quelle est la complexité de ce calcul, en présence de $n$ observations?
+
+* Chaque ligne de $\alpha = h^{\top} K^{-1}$ représente les poids affectés à chaque réponse dans la combinaison linéaire optimale. Ces poids se somment-ils à un ? y a-t-il des poids négatifs? Comment se comporte la prédiction loin des points observés? pourquoi?
+
+```{r}
+# votre code ici
+```
+
+
+## Question 1e. Intervalles de confiance
+
+La covariance de Krigeage Simple aux abscisses $x^{new}$ (dite encore a covariance posteriori)  est donnée par la formule:
+$$ c(x^{new}, x^{new}) = k(x^{new},x^{new}) - h^{\top} K^{-1} \cdot h$$
+La variance de Krigeage est donnée par la diagonale de cette matrice
+$$ v(x^{new}) = diag(c(x^{new}, x^{new}))= diag(\sigma^2 I_d-h^{\top} K^{-1} \cdot h)$$
+
+A l'aide de cette variance de Krigeage, ajouter des intervalles de confiances (sous une hypothèse Gaussienne) au graphique précédent.
+
+```{r}
+# votre code ici
+```
+
+
+# Question 2. Utilisation de paquets logiciels
+
+Nous allons reprendre ici l'exemple élémentaire précédent, et retrouver les résultats obtenus à l'aide d'un paquet logiciel tout prêt *DiceKriging*, disponible sur le dépôt logiciel CRAN. Sauf mention contraire, toutes les variables utilisées seront celles de la question 1.
+
+## Question 2a  Utilisation de DiceKrigring
+Installer la librairie DiceKriging (dans R Studio, utiliser Tools, Install Packages). Charger cette librairie
+
+```{r}
+# votre code ici
+```
+
+
+## Question 2b Modèle de Krigeage
+Au moyen de la fonction *km* créer un modèle de Krigeage Simple, que vous stockerez dans une variable *monModele*.
+(Pour schématiser *km* va calculer la matrice $K$ et son inverse, de façon à pouvoir faire ensuite plusieurs prédictions sans recalculer cette matrice.)
+
+Vous aurez besoin d'utiliser les options suivantes:
+
+* Pour le type de Krigeage,
+
+    * `formula = ~1` et `coef.trend = 0` pour du Krigeage Simple (on a un trend constant égal à zero)
+
+    * `formula = ~1` et `coef.trend = NULL` pour du Krigeage Ordinaire (on a un trend constant à estimer)
+
+    * `formula = ~Y~1+X` (ou `formula = ~Y~1+X+I(X^2))`et `coef.trend = NULL` pour du Krigeage Universel.
+
+* Pour les observations: `design = ...`, `response = ... ` pour indiquer les inputs et output observés.
+
+* Pour le noyau de covariance:
+`covtype=...` (type de noyau), `coef.cov = ...` pour le(s) paramètre(s) $\theta$, `coef.var =` pour la variance $\sigma^2$
+
+```{r}
+# votre code ici
+```
+
+
+Ensuite, établissez une prédiction aux points *x^{new}* au moyen de la fonction `predict` de DiceKriging.
+Vous aurez à utiliser les paramètres suivants:
+
+* `object=...` pour spécifier le modèle de Krigeage, vous indiquerez `monModele`.
+
+* `newdata=...` pour spécifier les nouveaux inputs où l'on souhaite prédire
+
+* `type=...` pour spécifier le prédicteur désiré, "SK" pour Simple Kriging, ou "UK" pour Ordinary et Universal.
+
+* `checkNames=FALSE` si vous ne souhaitez pas vérifier les noms des variables dans les objets en entrée de type dataframe.
+
+trouver l'option à utiliser pour calculer les variances (ou écart types) de Krigeage. Extraire moyenne et variance de Krigeage dans des variables $m_{Dice}$ et $v_{Dice}$.
+
+```{r}
+# votre code ici
+```
+
+
+## Question 2c
+
+Comparer les résultats obtenus avec ceux de l'exercice 1. Renvoyez un booléen qui renvoie TRUE ou FALSE selon que les résltats sont similaires ou non. 
+
+```{r}
+# votre code ici
+```
+
+_Remarque_: prenez l'habitude de tester ainsi vos résultats, à la façon de *tests unitaires*, cf. <https://en.wikipedia.org/wiki/Unit_testing> . Il est commun de vérifier manuellement le bon comportement de fonctions, puis malheureusement d'effacer ces vérifications. Le fait de préserver des tests automatisés, renvoyant des booléens faciles à agréger, permet de s'assurer du bon fonctionnement d'un programme au fur et à mesure qu'il évolue.
+
+## Question 2d
+
+Effectuez une nouvelle prédiction avec DiceKriging, en utilisant un Krigeage Ordinaire avec les mêmes paramètres. Tracer a prédiciton obtenue, quelle est la différence avec le Krigeage Simple?
+
+```{r}
+# votre code ici
+```
+
+_Remarque_: des indications et exemples sur le package DiceKriging sont aussi disponibles ici: <https://hal.archives-ouvertes.fr/hal-00495766/file/jss642.pdf>
+
+# Question 3
+
+Un industriel souhaite optimiser la conception d'aubes (de pales) de turbine. Il souhaite pour cela établir un plan d'expérience, puis un métamodèle qui lui permettra d'estimer la performance d'un profil d'aube donné. 
+
+
+A l'issue d'une première étude, deux paramètres de géométrie des aubes semblent cruciaux pour la performance globale de la turbine, ces deux paramètres ont été normalisés et prennent chacun des valeurs dans $[0,1]$. Pour la construction future du métamodèle, l'industriel souhaite utiliser un Krigeage simple. Les performances qu'il mesure semblent évoluer de façon très régulière, il souhaite donc opter pour un noyau de covariance Gaussien, de longueurs de corrélation (lengthscales) $\theta=0.3$ pour chacune des deux dimensions.
+
+
+L'industriel envisage de procéder en deux étapes:
+
+* Créer un plan d'expérience simple, construire des prototypes et effectuer des mesures précises de performance pour $n=20$ profils différents.
+
+* Puis créer et tracer un métamodèle, à partir d'un Krigeage Simple des observations effectuées. 
+
+La réalisation des $n$ prototypes et essais devrait prendre un mois, il est donc important de ne pas faire d'essais trop similaires...
+
+## 3a. Plan optimisé Kriging Based Design - grille d'évaluation
+
+Créer une fonction pour évaluer numériquement le critère IMSE d'un plan donné.
+
+Pour cela, on va tout d'abord créer une grille de 10000 points, couvrant le carré $[0,1]^2$. On stockera ces points dans une matrice $x^{new}$ de taille 10000 x 2 par exemple. Vous pourrez utiliser pour cela la fonction `expand.grid`. 
+
+```{r}
+# votre code ici
+```
+
+## 3b. Plan optimisé Kriging Based Design - critère IMSE
+
+Par Krigeage Simple et pour un plan $X$, on en déduit alors la valeur de la variance de Krigeage sur chaque point de la grille $x^{new}$, une moyenne de ces grandeurs donnera le critère IMSE.
+
+Tout d'abord, pour un plan X donné, la variance de Krigeage dépend-elle des réponses $Y$ observées? La minimisation d'un critère IMSE sera-t-elle affectée par la variance $\sigma^2$ de la réponse ?
+
+```{r}
+# votre code ici
+```
+
+
+Créer un plan $X$ de $n$ essais dans $[0,1]^2$, tirés de façon uniforme qui permettra de tester votre fonction.
+
+Calculer par Krigeage simple, à l'aide de DiceKriging, la variance de Krigeage en chaque point $x^{new}$. Attention, vous aurez besoin d'un paramètre de portée (lengthscale $\theta$) par dimension. Quand tout fonctionne, encapsulez le tout dans une fonction IMSE, prenant en argument un plan X, et renvoyant le critère IMSE.
+
+```{r}
+# votre code ici
+```
+
+
+## 3c. Plan optimisé 'Kriging Based Design' final
+
+Répéter 1000 fois le tirage aléatoire d'un plan $X$ et le calcul de l'IMSE correspondant. Sauvegarder le meilleur et le pire plan obtenu pour ce critère. Nommez ces deux plans *Xbest* et *Xworse*, tracez ces plans. 
+
+Remarque: On pourrait bien sûr améliorer le meilleur plan en partant de plans plus optimisés (l'enjeu était ici de voir aussi de "mauvais" plans).
+
+```{r}
+# votre code ici
+```
+
+
+## 3d. Le grand jour
+
+Après un mois de travaux, de construction de turbines et de tests de performance, l'industriel est en mesure de donner la mesure de performance pour chacun des $n$ points du meilleur plan d'expérience *Xbest*.
+
+Nous supposerons ici que cette performance nommée *Y* est le résultat de la fonction *branin* du package DiceKriging.
+
+Calculer *Y* pour chaque point de *Xbest*, puis calculer la moyenne de Krigeage Simple en chacun des points de *xnew*. En vous inspirant de ce code <https://rdrr.io/cran/DiceKriging/man/branin.html> tracer les courbes de niveau de votre moyenne de Krigeage. On pourra remplacer `contour(x,y,z,40)` par `filled.contour(x,y,z)` pour un résultat plus visuel.
+
+```{r}
+# votre code ici
+```
+
